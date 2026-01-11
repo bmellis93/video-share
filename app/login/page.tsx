@@ -16,7 +16,7 @@ export default function LoginPage({
 
         <a
           className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-200"
-          href={`/api/auth/ghl/start?next=${next}`}
+          href={`/api/auth/oauth/start?next=${encodeURIComponent(next)}`}
         >
           Connect HighLevel
         </a>
