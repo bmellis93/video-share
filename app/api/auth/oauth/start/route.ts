@@ -10,7 +10,6 @@ function mustEnv(name: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const base = mustEnv("GHL_BASE_URL");
   const clientId = mustEnv("GHL_CLIENT_ID");
   const redirectUri = mustEnv("GHL_REDIRECT_URI");
   const scopes = process.env.GHL_SCOPES || "locations.read";
@@ -23,8 +22,11 @@ export async function GET(req: NextRequest) {
   const nonce = crypto.randomBytes(16).toString("hex");
   const state = encodeURIComponent(JSON.stringify({ next: safeNext, nonce }));
 
+  // ✅ Authorize endpoint (NOT services.leadconnectorhq.com)
+  const AUTH_URL = "https://marketplace.gohighlevel.com/oauth/authorize";
+
   const authUrl =
-    `${base}/oauth/authorize` +
+    `${AUTH_URL}` +
     `?client_id=${encodeURIComponent(clientId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code` +
