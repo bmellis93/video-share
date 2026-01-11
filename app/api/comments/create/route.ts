@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireValidShareToken } from "@/app/lib/share-auth";
-import { prisma } from "@/app/lib/prisma";
+import { requireValidShareToken } from "@/lib/share-auth";
+import { prisma } from "@/lib/prisma";
+import { parseAllowedIds } from "@/lib/share/shareLinkUtils";
+
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,17 +16,23 @@ export async function POST(req: NextRequest) {
 
     const share = res.share;
 
-    // Token must match the video
-    if (share.videoId !== String(videoId || "")) {
-      return NextResponse.json({ error: "Token/video mismatch" }, { status: 403 });
+    const orgId = String(share.orgId || "").trim();
+    if (!orgId) {
+      return NextResponse.json({ error: "Invalid share link (missing orgId)" }, { status: 400 });
     }
 
-    // Permission check
+    const vid = String(videoId || "").trim();
+    if (!vid) {
+      return NextResponse.json({ error: "videoId is required" }, { status: 400 });
+    }
+
+    const allowed = parseAllowedIds(share);
+    if (!allowed.includes(vid)) {
+      return NextResponse.json({ error: "Video not allowed for this link" }, { status: 403 });
+    }
+
     if (!share.allowComments) {
-      return NextResponse.json(
-        { error: "Comments disabled for this link" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Comments disabled for this link" }, { status: 403 });
     }
 
     const trimmed = String(body || "").trim();
@@ -32,33 +41,34 @@ export async function POST(req: NextRequest) {
     }
 
     // ✅ Reply validation (ONLY if parentId provided)
-    let parent: { id: string; token: string; videoId: string } | null = null;
+    let parent: { id: string; token: string; videoId: string; orgId: string } | null = null;
 
     if (parentId) {
       parent = await prisma.comment.findUnique({
         where: { id: String(parentId) },
-        select: { id: true, token: true, videoId: true },
+        select: { id: true, token: true, videoId: true, orgId: true },
       });
 
       if (!parent) {
         return NextResponse.json({ error: "Parent comment not found" }, { status: 404 });
       }
 
-      // Prevent cross-linking across videos/tokens
-      if (parent.token !== share.token || parent.videoId !== share.videoId) {
+      // Prevent cross-linking across org/token/video
+      if (parent.orgId !== orgId || parent.token !== share.token || parent.videoId !== vid) {
         return NextResponse.json({ error: "Invalid parent for this link" }, { status: 403 });
       }
     }
 
     const comment = await prisma.comment.create({
       data: {
-        token: share.token,
-        videoId: share.videoId,
+        orgId,                 // ✅ REQUIRED now
+        token: share.token,    // share token
+        videoId: vid,
         timecodeMs: Number(timecodeMs || 0),
-        body: String(body || "").trim(),
+        body: trimmed,
         author: null,
         role: "CLIENT",
-        parentId: parent ? parent.id : null, // null = top-level comment
+        parentId: parent ? parent.id : null,
       },
     });
 

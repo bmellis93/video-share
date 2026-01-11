@@ -2,6 +2,9 @@ import ClientGalleryScreen from "@/components/share/ClientGalleryScreen";
 import { fetchShare } from "@/lib/share/fetchShare";
 import { notFound } from "next/navigation";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type Props = {
   params: { shareId: string };
 };

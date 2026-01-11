@@ -1,0 +1,169 @@
+"use client";
+
+import Link from "next/link";
+import { Clock, MessageSquare, Layers } from "lucide-react";
+
+export type OwnerVideoStatus = "READY" | "UPLOADING" | "PROCESSING" | "FAILED";
+
+export type OwnerVideo = {
+  id: string;
+  title: string;
+  description?: string;
+  thumbnailUrl?: string | null;
+  createdAt: string;
+  status: OwnerVideoStatus;
+
+  // future fields
+  commentCount?: number;
+  versionCount?: number; // if stacked
+};
+
+type Props = {
+  galleryId: string;
+  video: OwnerVideo;
+};
+
+function statusLabel(status: OwnerVideoStatus) {
+  switch (status) {
+    case "READY":
+      return "Ready";
+    case "UPLOADING":
+      return "Uploading";
+    case "PROCESSING":
+      return "Processing";
+    case "FAILED":
+      return "Failed";
+    default:
+      return status;
+  }
+}
+
+function statusPillClasses(status: OwnerVideoStatus) {
+  // keep it neutral, but give subtle semantic hints
+  switch (status) {
+    case "READY":
+      return "border-emerald-900/50 bg-emerald-950/40 text-emerald-200";
+    case "FAILED":
+      return "border-red-900/50 bg-red-950/40 text-red-200";
+    case "PROCESSING":
+      return "border-sky-900/50 bg-sky-950/40 text-sky-200";
+    case "UPLOADING":
+      return "border-amber-900/50 bg-amber-950/40 text-amber-200";
+    default:
+      return "border-neutral-800 bg-neutral-950/70 text-neutral-200";
+  }
+}
+
+function safeDateLabel(iso: string) {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "—";
+  return t.toLocaleDateString();
+}
+
+export default function VideoCard({ galleryId, video }: Props) {
+  const href = `/owner/galleries/${galleryId}/videos/${video.id}`;
+
+  const createdLabel = safeDateLabel(video.createdAt);
+  const commentCount = Math.max(0, video.commentCount ?? 0);
+  const versionCount = Math.max(1, video.versionCount ?? 1);
+  const label = statusLabel(video.status);
+
+  return (
+    <Link
+      href={href}
+      aria-label={`Open ${video.title}`}
+      className={[
+        "group block overflow-hidden rounded-2xl border border-neutral-900 bg-neutral-950/40 transition",
+        "hover:bg-neutral-900/25 hover:border-neutral-700",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700",
+      ].join(" ")}
+    >
+      {/* media */}
+      <div className="relative aspect-video bg-neutral-900/60">
+        {video.thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={video.thumbnailUrl}
+            alt=""
+            className={[
+              "h-full w-full object-cover",
+              "transition-transform duration-200 ease-out",
+              "group-hover:scale-[1.02]",
+            ].join(" ")}
+            loading="lazy"
+          />
+        ) : (
+          <div className="absolute inset-0 grid place-items-center text-neutral-400 text-sm">
+            Thumbnail
+          </div>
+        )}
+
+        {/* subtle hover overlay */}
+        <div
+          className={[
+            "pointer-events-none absolute inset-0",
+            "opacity-0 transition-opacity duration-200",
+            "group-hover:opacity-100",
+            "bg-gradient-to-t from-black/35 via-black/0 to-black/0",
+          ].join(" ")}
+        />
+
+        {/* top-right hover checkbox placeholder (scaffold) */}
+        <div className="absolute right-3 top-3 opacity-0 transition group-hover:opacity-100">
+          <div className="h-6 w-6 rounded-md border border-neutral-700 bg-neutral-950/70" />
+        </div>
+
+        {/* status pill */}
+        <div className="absolute left-3 top-3">
+          <span
+            className={[
+              "inline-flex items-center rounded-full border px-2 py-0.5 text-xs",
+              "backdrop-blur",
+              statusPillClasses(video.status),
+            ].join(" ")}
+          >
+            {label}
+          </span>
+        </div>
+      </div>
+
+      {/* content */}
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-white">
+              {video.title}
+            </div>
+
+            {video.description ? (
+              <div className="mt-1 line-clamp-2 text-xs text-neutral-400">
+                {video.description}
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-neutral-500">No description</div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-xs text-neutral-400">
+          <div className="inline-flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="tabular-nums">{createdLabel}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1" title="Comments">
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="tabular-nums">{commentCount}</span>
+            </span>
+
+            <span className="inline-flex items-center gap-1" title="Versions">
+              <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="tabular-nums">{versionCount}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}

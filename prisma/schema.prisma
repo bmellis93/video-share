@@ -1,28 +1,193 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model ShareLink {
-  id              String   @id @default(cuid())
-  token           String   @unique
-  videoId         String
-  createdAt       DateTime @default(now())
-  expiresAt       DateTime?
-  allowComments   Boolean  @default(true)
-  allowDownload   Boolean  @default(false)
-  contactId       String?
-  conversationId  String?
+  id                  String    @id @default(cuid())
+  orgId               String
+  token               String    @unique
+  videoId             String?
+  galleryId           String?
+  title               String?
+  allowedVideoIdsJson String?
+  stacksJson          String?
+  view                ShareView @default(REVIEW_DOWNLOAD)
+  allowComments       Boolean   @default(true)
+  allowDownload       Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  expiresAt           DateTime?
+  contactId           String?
+  conversationId      String?
+  video               Video?    @relation(fields: [videoId], references: [id])
+
+  @@index([token])
+  @@index([orgId])
+}
+
+model Comment {
+  id         String        @id @default(cuid())
+  orgId      String
+  token      String
+  videoId    String
+  timecodeMs Int
+  body       String
+  author     String?
+  role       CommentRole   @default(CLIENT)
+  createdAt  DateTime      @default(now())
+  parentId   String?
+  status     CommentStatus @default(OPEN)
+  parent     Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[]     @relation("CommentReplies")
+
+  @@index([token, createdAt])
+  @@index([videoId])
+  @@index([videoId, timecodeMs])
+  @@index([parentId, createdAt])
+  @@index([videoId, status])
+  @@index([orgId])
+}
+
+model Video {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  status      VideoStatus @default(UPLOADED)
+
+  sourceUrl     String
+  thumbnailUrl  String?
+  muxAssetId    String?
+  muxPlaybackId String?
+  playbackUrl   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  archivedAt    DateTime?
+  deletedAt     DateTime?
+
+  galleryVideos GalleryVideo[]
+
+  shareLinks ShareLink[]
+
+  originalKey  String?
+  originalName String?
+  originalMime String?
+  originalSize BigInt?
+
+  failureReason String?
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([orgId])
+  @@index([originalKey])
+  @@index([archivedAt])
+  @@index([deletedAt])
+}
+
+model Gallery {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  title      String?
+  stacksJson String?
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  archivedAt DateTime?
+  deletedAt  DateTime?
+
+  videos GalleryVideo[]
+
+  @@index([orgId])
+  @@index([archivedAt])
+  @@index([deletedAt])
+}
+
+model GalleryVideo {
+  galleryId String
+  videoId   String
+
+  gallery Gallery @relation(fields: [galleryId], references: [id], onDelete: Cascade)
+  video   Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  stackKey String?
+  version  Int?
+
+  @@id([galleryId, videoId])
+  @@index([galleryId])
+  @@index([videoId])
+  @@index([galleryId, stackKey, version])
+}
+
+model Org {
+  id        String   @id
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  installations Installation[]
+  members       OrgMember[]
+
+  videos    Video[]
+  galleries Gallery[]
+
+  storageUsedBytes  BigInt @default(0)
+}
+
+model Installation {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([orgId])
+}
+
+model AppUser {
+  id        String   @id
+  email     String?
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orgs OrgMember[]
+}
+
+model OrgMember {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user AppUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@index([userId])
+}
+
+enum ShareView {
+  VIEW_ONLY
+  REVIEW_DOWNLOAD
 }
 
 enum CommentRole {
@@ -30,24 +195,14 @@ enum CommentRole {
   CLIENT
 }
 
-model Comment {
-  id         String   @id @default(cuid())
+enum CommentStatus {
+  OPEN
+  RESOLVED
+}
 
-  token      String   // share token used (fast auth + scoping)
-  videoId    String
-  timecodeMs Int      // for top-level comments; replies can reuse parent time or be 0
-  body       String
-  author     String?
-  role       CommentRole  @default(CLIENT)
-  createdAt  DateTime @default(now())
-
-  parentId   String?
-  parent     Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies    Comment[] @relation("CommentReplies")
-
-  // Keep these from your current model (they matter)
-  @@index([token, createdAt])
-  @@index([videoId])
-  @@index([videoId, timecodeMs])
-  @@index([parentId, createdAt])
+enum VideoStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
 }

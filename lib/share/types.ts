@@ -9,12 +9,11 @@ export type SharePermissions = {
 export type SharePayload = {
   shareId: string;
   title: string;
-
   permissions: SharePermissions;
-
-  // include ALL allowed ids (including stacked children)
   allowedVideoIds: string[];
-
-  // stack parent -> ordered version ids
   stacks: StackMap;
+
+  // optional future fields
+  // createdAt?: string;
+  // expiresAt?: string;
 };

@@ -1,37 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireValidShareToken } from "@/app/lib/share-auth";
-import { prisma } from "@/app/lib/prisma";
+import { requireValidShareToken } from "@/lib/share-auth";
+import { prisma } from "@/lib/prisma";
+import { parseAllowedIds } from "@/lib/share/shareLinkUtils";
 
-type ThreadedComment = {
-  id: string;
-  timecodeMs: number;
-  body: string;
-  author: string | null;
-  createdAt: string; // ISO for client
-  parentId: string | null;
-  replies: ThreadedComment[];
-};
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { token } = await req.json();
+    const { token, videoId } = await req.json();
 
     const res = await requireValidShareToken(String(token || ""));
-    if (!res.ok) {
-      return NextResponse.json({ error: res.error }, { status: res.status });
-    }
+    if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });
 
     const share = res.share;
+    const allowed = parseAllowedIds(share);
+
+    const vid = String(videoId || "").trim();
+    if (!vid) return NextResponse.json({ error: "videoId is required" }, { status: 400 });
+
+    if (!allowed.includes(vid)) {
+      return NextResponse.json({ error: "Video not allowed for this link" }, { status: 403 });
+    }
 
     const rows = await prisma.comment.findMany({
       where: {
+        orgId: share.orgId,          // ✅ enforce org scope
         token: share.token,
-        videoId: share.videoId,
+        videoId: vid,
       },
-      orderBy: [
-        { timecodeMs: "asc" },
-        { createdAt: "asc" }
-      ],
+      orderBy: [{ timecodeMs: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
         timecodeMs: true,
@@ -40,10 +37,12 @@ export async function POST(req: NextRequest) {
         createdAt: true,
         parentId: true,
         role: true,
+        status: true,               // ✅ optional but useful
       },
     });
 
-    const byId = new Map<string, ThreadedComment>();
+    const byId = new Map<string, any>();
+
     for (const r of rows) {
       byId.set(r.id, {
         id: r.id,
@@ -52,18 +51,21 @@ export async function POST(req: NextRequest) {
         author: r.author,
         createdAt: r.createdAt.toISOString(),
         parentId: r.parentId,
+        role: r.role,
+        status: r.status,
         replies: [],
       });
     }
 
-    const roots: ThreadedComment[] = [];
+    const roots: any[] = [];
+
     for (const r of rows) {
       const node = byId.get(r.id)!;
 
       if (r.parentId) {
         const parent = byId.get(r.parentId);
         if (parent) parent.replies.push(node);
-        else roots.push(node); // orphan fallback
+        else roots.push(node); // parent missing (shouldn't happen, but safe)
       } else {
         roots.push(node);
       }
@@ -73,10 +75,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error("LIST COMMENTS ERROR:", err);
     return NextResponse.json(
-      {
-        error: "Server error",
-        detail: err?.message || String(err),
-      },
+      { error: "Server error", detail: err?.message || String(err) },
       { status: 500 }
     );
   }

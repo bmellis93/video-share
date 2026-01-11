@@ -1,67 +1,69 @@
-// app/api/comments/create-owner/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/app/lib/prisma";
-// import { requireOwner } from "@/app/lib/auth"; // your auth
+import { prisma } from "@/lib/prisma";
+import { requireOwnerContext } from "@/lib/auth/ownerSession";
+
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    // await requireOwner(req);
+    const ctx = await requireOwnerContext(); // ✅ await (ctx is OwnerContext now)
 
     const { videoId, body, timecodeMs, parentId } = await req.json();
-    if (!String(videoId || "")) {
-      return NextResponse.json({ error: "videoId required" }, { status: 400 });
-    }
-    if (!String(body || "").trim()) {
-      return NextResponse.json({ error: "Comment body required" }, { status: 400 });
-    }
 
-    let parent: { id: string; videoId: string; token: string } | null = null;
+    const vid = String(videoId || "").trim();
+    if (!vid) return NextResponse.json({ error: "videoId is required" }, { status: 400 });
 
-    if (parentId) {
-      parent = await prisma.comment.findUnique({
-        where: { id: String(parentId) },
-        select: { id: true, videoId: true, token: true },
-      });
+    const trimmed = String(body || "").trim();
+    if (!trimmed) return NextResponse.json({ error: "Comment body required" }, { status: 400 });
 
-      if (!parent) {
-        return NextResponse.json({ error: "Parent comment not found" }, { status: 404 });
-      }
-
-      // owner replies must stay on same video
-      if (parent.videoId !== String(videoId)) {
-        return NextResponse.json({ error: "Invalid parent for this video" }, { status: 403 });
-      }
-    }
-
-    // Owner comments still need a token value for indexing/threading with client view.
-    // Easiest: look up the ShareLink for this video and reuse its token, OR store a separate ownerToken concept.
-    const share = await prisma.shareLink.findFirst({
-      where: { videoId: String(videoId) },
-      orderBy: { createdAt: "desc" },
-      select: { token: true },
+    // ✅ enforce org scope
+    const video = await prisma.video.findUnique({
+      where: { id: vid },
+      select: { id: true, orgId: true },
     });
 
-    if (!share) {
-      return NextResponse.json({ error: "No share token exists for this video yet" }, { status: 400 });
+    if (!video) return NextResponse.json({ error: "Video not found" }, { status: 404 });
+    if (video.orgId !== ctx.orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    // ✅ Reply validation (same org + same video)
+    if (parentId) {
+      const parent = await prisma.comment.findUnique({
+        where: { id: String(parentId) },
+        select: { id: true, videoId: true, orgId: true },
+      });
+
+      if (!parent) return NextResponse.json({ error: "Parent comment not found" }, { status: 404 });
+      if (parent.videoId !== vid || parent.orgId !== ctx.orgId) {
+        return NextResponse.json({ error: "Invalid parent for this org/video" }, { status: 403 });
+      }
     }
 
     const comment = await prisma.comment.create({
       data: {
-        token: share.token,
-        videoId: String(videoId),
+        orgId: ctx.orgId,
+        token: `OWNER:${ctx.orgId}`, // ✅ required string; keeps owner comments distinct
+        videoId: vid,
         timecodeMs: Number(timecodeMs || 0),
-        body: String(body || "").trim(),
-        author: "Owner",
+        body: trimmed,
+        author: null, // or store ctx.userId/name if you want
         role: "OWNER",
-        parentId: parent ? parent.id : null,
+        parentId: parentId ? String(parentId) : null,
+      },
+      select: {
+        id: true,
+        timecodeMs: true,
+        body: true,
+        author: true,
+        createdAt: true,
+        parentId: true,
+        role: true,
+        status: true,
       },
     });
 
     return NextResponse.json({ ok: true, comment });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: "Server error", detail: err?.message || String(err) },
-      { status: 500 }
-    );
+    console.error("create-owner error:", err);
+    return NextResponse.json({ error: err?.message ?? "Server error" }, { status: 500 });
   }
 }

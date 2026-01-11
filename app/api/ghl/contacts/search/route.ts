@@ -1,30 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireOwnerContext } from "@/lib/auth/ownerSession";
+import { getGhlAccessToken, ghlHeaders } from "@/lib/ghl/client";
 
 const GHL_BASE_URL = process.env.GHL_BASE_URL!;
-const GHL_PRIVATE_TOKEN = process.env.GHL_PRIVATE_TOKEN!;
-const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID!;
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { query } = body;
+    const { orgId } = await requireOwnerContext();
+    const accessToken = await getGhlAccessToken(orgId);
 
+    const { query } = await req.json();
     if (!query || query.length < 2) {
-      return NextResponse.json(
-        { error: "Query must be at least 2 characters" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Query must be at least 2 characters" }, { status: 400 });
     }
 
     const res = await fetch(`${GHL_BASE_URL}/contacts/search`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${GHL_PRIVATE_TOKEN}`,
-        "Content-Type": "application/json",
-        Version: "2021-07-28",
-      },
+      headers: ghlHeaders(accessToken),
       body: JSON.stringify({
-        locationId: GHL_LOCATION_ID,
+        locationId: orgId,       // ✅ orgId = locationId
         query,
         pageLimit: 20,
       }),
@@ -32,19 +26,12 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("GHL Error:", text);
-      return NextResponse.json(
-        { error: "Failed to search contacts" },
-        { status: res.status }
-      );
+      return NextResponse.json({ error: text }, { status: res.status });
     }
 
     const data = await res.json();
-
-    // Normalize for your UI
     const contacts = (data.contacts || []).map((c: any) => {
       const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim();
-      
       return {
         id: c.id,
         name: name || "Unnamed Contact",
@@ -56,11 +43,7 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ contacts });
-  } catch (err) {
-    console.error("Contact search error:", err);
-    return NextResponse.json(
-      { error: "Server error" },
-      { status: 500 }
-    );
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message ?? "Server error" }, { status: 500 });
   }
 }
