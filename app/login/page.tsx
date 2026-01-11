@@ -14,8 +14,11 @@ export default function LoginPage({
           Connect your HighLevel account to continue.
         </p>
 
-        <a href="/api/auth/oauth/start?next=/owner/galleries">
-          Connect to HighLevel
+        <a
+          className="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-200"
+          href="/api/auth/oauth/start?next=/owner/galleries"
+        >
+          Connect HighLevel
         </a>
       </div>
     </main>
