@@ -20,18 +20,16 @@ export async function GET(req: NextRequest) {
 
   // CSRF nonce in state + cookie
   const nonce = crypto.randomBytes(16).toString("hex");
-  const state = encodeURIComponent(JSON.stringify({ next: safeNext, nonce }));
+  const state = JSON.stringify({ next: safeNext, nonce });
 
-  // ✅ Authorize endpoint (NOT services.leadconnectorhq.com)
-  const AUTH_URL = "https://marketplace.gohighlevel.com/oauth/authorize";
+  const auth = new URL("https://marketplace.gohighlevel.com/oauth/authorize");
+  auth.searchParams.set("client_id", clientId);
+  auth.searchParams.set("redirect_uri", redirectUri);
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("scope", scopes);
+  auth.searchParams.set("state", state);
 
-  const authUrl =
-    `${AUTH_URL}` +
-    `?client_id=${encodeURIComponent(clientId)}` +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&response_type=code` +
-    `&scope=${encodeURIComponent(scopes)}` +
-    `&state=${state}`;
+  const authUrl = auth.toString();
 
   const res = NextResponse.redirect(authUrl);
 
